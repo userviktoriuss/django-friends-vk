@@ -32,15 +32,11 @@ class FriendsView(viewsets.ModelViewSet):
 
     # Удаляет пользователя из друзей.
     def destroy(self, request, *args, **kwargs):
-        pk = kwargs.get('pk', None)
         sender = request.user
-        if not pk:  # Неправильный запрос
-            return Response({'error': 'Method DELETE is not allowed.'})
-
-        try:  # Пользователь не существует
-            getter = User.objects.get(pk=pk)
-        except Exception:
-            return Response({'error': 'Object does not exist.'})
+        get_status = self.get_user(kwargs, 'DELETE')
+        if 'error' in get_status.keys():
+            return Response(get_status)
+        getter = get_status['getter']
 
         if not self.are_friends(sender, getter):
             return Response({'error': f'User {getter} is not in your friend list.'})
@@ -75,6 +71,19 @@ class FriendsView(viewsets.ModelViewSet):
             user1=sender,
             user2=getter
         )
+
+    # Получает пользователя по id или возвращает ошибку
+    @classmethod
+    def get_user(cls, kwargs, http_method):
+        pk = kwargs.get('pk', None)
+        if not pk:  # Неправильный запрос
+            return {'error': f'Method {http_method} is not allowed.'}
+
+        try:  # Пользователь не существует
+            getter = User.objects.get(pk=pk)
+            return {'getter': getter, 'pk': pk}
+        except Exception:
+            return {'error': 'Object does not exist.'}
 
 
 @extend_schema(tags=["InvitesView"])
@@ -137,17 +146,13 @@ class InvitesView(viewsets.ModelViewSet):
 
     # Отправляет пользователю запрос дружбы.
     def partial_update(self, request, *args, **kwargs):
-        pk = kwargs.get('pk', None)
         sender = request.user
-        if not pk:  # Неправильный запрос
-            return Response({'error': 'Method POST is not allowed.'})
+        get_status = FriendsView.get_user(kwargs, 'POST')
+        if 'error' in get_status.keys():
+            return Response(get_status)
+        getter = get_status['getter']
 
-        try:  # Пользователь не существует
-            getter = User.objects.get(pk=pk)
-        except Exception:
-            return Response({'error': 'Object does not exist.'})
-
-        if sender.id == pk:  # Была отправлена заявка самому себе
+        if sender.id == get_status['pk']:  # Была отправлена заявка самому себе
             return Response({'error': 'Can\'t invite yourself.'})
 
         if FriendsView.are_friends(sender, getter):  # Уже есть заявка в друзья.
@@ -178,15 +183,11 @@ class InvitesView(viewsets.ModelViewSet):
 
     # Отменяет запрос дружбы.
     def destroy(self, request, *args, **kwargs):
-        pk = kwargs.get('pk', None)
         sender = request.user
-        if not pk:  # Неправильный запрос
-            return Response({'error': 'Method DELETE is not allowed.'})
-
-        try:  # Пользователь не существует
-            getter = User.objects.get(pk=pk)
-        except Exception:
-            return Response({'error': 'Object does not exist.'})
+        get_status = FriendsView.get_user(kwargs, 'DELETE')
+        if 'error' in get_status.keys():
+            return Response(get_status)
+        getter = get_status['getter']
 
         # Приглашение не существует.
         if InviteList.objects.filter(
@@ -201,15 +202,11 @@ class InvitesView(viewsets.ModelViewSet):
 
     # Позволяет отклонить/принять заявку в друзья.
     def update(self, request, *args, **kwargs):
-        pk = kwargs.get('pk', None)
         this = request.user
-        if not pk:  # Неправильный запрос
-            return Response({'error': 'Method GET is not allowed.'})
-
-        try:  # Пользователь не существует
-            other = User.objects.get(pk=pk)
-        except Exception:
-            return Response({'error': 'Object does not exist.'})
+        get_status = FriendsView.get_user(kwargs, 'GET')
+        if 'error' in get_status.keys():
+            return Response(get_status)
+        other = get_status['getter']
 
         # Нет входящего запроса
         if InviteList.objects.filter(
@@ -237,15 +234,11 @@ class InvitesView(viewsets.ModelViewSet):
 
     # Возвращает статус дружбы - друзья, ожидает заявка, ничего.
     def retrieve(self, request, *args, **kwargs):
-        pk = kwargs.get('pk', None)
         sender = request.user
-        if not pk:  # Неправильный запрос
-            return Response({'error': 'Method POST is not allowed.'})
-
-        try:  # Пользователь не существует
-            getter = User.objects.get(pk=pk)
-        except Exception:
-            return Response({'error': 'Object does not exist.'})
+        get_status = FriendsView.get_user(kwargs, 'GET')
+        if 'error' in get_status.keys():
+            return Response(get_status)
+        getter = get_status['getter']
 
         # Пользователи друзья
         if FriendsView.are_friends(sender, getter):
