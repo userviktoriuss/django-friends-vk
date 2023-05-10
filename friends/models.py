@@ -1,19 +1,11 @@
 from django.conf import settings
 from django.db import models
-from django.contrib.auth.models import User
-
-
-# Create your models here.
-#class Users(models.Model):
-#    id = models.BigAutoField(primary_key=True)
-#    username = models.CharField(max_length=31)
-#
-#    def __str__(self):
-#        return '{1}(id{0})'.format(self.id, self.username)
-
 
 
 class FriendList(models.Model):
+    # Два пользователя, добавивших друг друга в друзья
+    # Порядок не поддерживается, но гарантируется,
+    # что пара встречается всего один раз
     user1 = models.ForeignKey(settings.AUTH_USER_MODEL,
                               on_delete=models.CASCADE,
                               related_name='user1')
@@ -26,6 +18,7 @@ class FriendList(models.Model):
 
 
 class InviteList(models.Model):
+    # Отправитель и получатель запроса в друзья соответственно
     sender = models.ForeignKey(settings.AUTH_USER_MODEL,
                                on_delete=models.CASCADE,
                                related_name='sender')

@@ -1,16 +1,12 @@
-from django.forms import model_to_dict
-from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiExample
-from rest_framework import generics, viewsets, status
+from django.contrib.auth.models import User
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiExample, OpenApiParameter
+from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
-from django.shortcuts import render
-from .models import FriendList, InviteList
+
 from .serializers import *
-from django.contrib.auth.models import User
 
 
-# Create your views here.
 @extend_schema(tags=["FriendsView"])
 @extend_schema_view(
     retrieve=extend_schema(
@@ -25,7 +21,7 @@ class FriendsView(viewsets.ModelViewSet):
     serializer_class = FriendsSerializer
     permission_classes = [IsAuthenticated]
 
-
+    # Возвращает список друзей текущего пользователя.
     def retrieve(self, request, *args, **kwargs):
         # TODO: убрать себя из вывода (два сериалайзера, тупая лямбда, ...)
         fr1 = FriendList.objects.filter(user1=request.user)
@@ -34,6 +30,7 @@ class FriendsView(viewsets.ModelViewSet):
 
         return Response({'friends': FriendsSerializer(fr1, many=True).data})
 
+    # Удаляет пользователя из друзей.
     def destroy(self, request, *args, **kwargs):
         pk = kwargs.get('pk', None)
         sender = request.user
@@ -42,13 +39,13 @@ class FriendsView(viewsets.ModelViewSet):
 
         try:  # Пользователь не существует
             getter = User.objects.get(pk=pk)
-        except:
+        except Exception:
             return Response({'error': 'Object does not exist.'})
-
 
         if not self.are_friends(sender, getter):
             return Response({'error': f'User {getter} is not in your friend list.'})
 
+        # Удаляет пару (sender, getter) или (getter, sender)
         if FriendList.objects.filter(
                 user1=sender,
                 user2=getter).all().count() != 0:
@@ -62,61 +59,72 @@ class FriendsView(viewsets.ModelViewSet):
 
         return Response({'info': f'User {getter} removed from your friends.'})
 
+    # Проверяет, что два пользователя друзья.
     @classmethod
     def are_friends(cls, sender, getter):
-        # TODO: проверить на работоспособность
         fr1 = FriendList.objects.filter(user1=sender, user2=getter)
         fr2 = FriendList.objects.filter(user1=getter, user2=sender)
         fr = fr1.union(fr2)
 
         return fr.count() != 0
 
+    # Делает пользователей друзьями.
     @classmethod
     def make_friends(cls, sender, getter):
         FriendList.objects.create(
-            user1 = sender,
-            user2 = getter
+            user1=sender,
+            user2=getter
         )
+
 
 @extend_schema(tags=["InvitesView"])
 @extend_schema_view(
-    # get_invites=extend_schema(
-    #     summary="Получает все входящие и исходящие запросы дружбы.",
-    #     #TODO: Нормальный пример и описание мува с ?is_in
-    # ),
-    # invite=extend_schema(
-    #     summary="Отправляет пользователю запрос дружбы.",
-    # ),
+    list=extend_schema(
+        summary="Получает все входящие и исходящие запросы дружбы.",
+        parameters=[
+            OpenApiParameter(
+                name='is_in',
+                location=OpenApiParameter.QUERY,
+                type=str,
+                default='true'
+            )
+        ]
+    ),
+    partial_update=extend_schema(
+        summary="Отправляет пользователю запрос дружбы.",
+        request=None,
+    ),
     destroy=extend_schema(
         summary="Отменяет запрос дружбы.",
     ),
 
-    # answer_invitation=extend_schema(
-    #     summary="Позволяет отклонить/принять заявку в друзья.",
-    #     examples=[
-    #             OpenApiExample(
-    #                 "Acception example",
-    #                 description="Test example for the answer_invitation.",
-    #                 value=
-    #                 {
-    #                     "action": "accept"
-    #                 },
-    #                 status_codes=[str(status.HTTP_200_OK)],
-    #             ),
-    #         ],
-    # ),
-    # get_status=extend_schema(
-    #     summary="Возвращает статус дружбы - друзья, ожидает заявка, ничего."
-    # )
+    update=extend_schema(
+        summary="Позволяет отклонить/принять заявку в друзья.",
+        examples=[
+                OpenApiExample(
+                    "Acceptation example",
+                    description="Test example for the answer_invitation.",
+                    value={
+                        "action": "accept"
+                    },
+                    status_codes=[str(status.HTTP_200_OK)],
+                ),
+            ],
+    ),
+    retrieve=extend_schema(
+        summary="Возвращает статус дружбы - друзья, ожидает заявка, ничего."
+    )
 )
 class InvitesView(viewsets.ModelViewSet):
     queryset = InviteList.objects.all()
     serializer_class = InvitesSerializer
     permission_classes = [IsAuthenticated]
-    ACCEPT = 'accept'
+    ACCEPT = 'accept'  # Константы для принятия и отказа от запроса дружбы
     DENY = 'deny'
 
-    def get_invites(self, request, *args, **kwargs):
+    # Получает все входящие и исходящие запросы дружбы.
+    def list(self, request, *args, **kwargs):
+        # Если запрашиваются входящие, будет равен "true" (default тоже "true")
         is_in = request.GET.get('is_in', 'true')
         resp = dict()
         if is_in == "true":
@@ -127,15 +135,16 @@ class InvitesView(viewsets.ModelViewSet):
             resp['invites_out'] = InvitesSerializer(fr, many=True).data
         return Response(resp)
 
-    def invite(self, request, *args, **kwargs):
+    # Отправляет пользователю запрос дружбы.
+    def partial_update(self, request, *args, **kwargs):
         pk = kwargs.get('pk', None)
         sender = request.user
         if not pk:  # Неправильный запрос
             return Response({'error': 'Method POST is not allowed.'})
 
         try:  # Пользователь не существует
-            getter=User.objects.get(pk=pk)
-        except:
+            getter = User.objects.get(pk=pk)
+        except Exception:
             return Response({'error': 'Object does not exist.'})
 
         if sender.id == pk:  # Была отправлена заявка самому себе
@@ -167,6 +176,7 @@ class InvitesView(viewsets.ModelViewSet):
         )
         return Response({'post': InvitesSerializer(instance).data})
 
+    # Отменяет запрос дружбы.
     def destroy(self, request, *args, **kwargs):
         pk = kwargs.get('pk', None)
         sender = request.user
@@ -175,7 +185,7 @@ class InvitesView(viewsets.ModelViewSet):
 
         try:  # Пользователь не существует
             getter = User.objects.get(pk=pk)
-        except:
+        except Exception:
             return Response({'error': 'Object does not exist.'})
 
         # Приглашение не существует.
@@ -189,7 +199,8 @@ class InvitesView(viewsets.ModelViewSet):
             getter=getter).delete()
         return Response({'info': f'Invitation to {getter} deleted successfully.'})
 
-    def answer_invitation(self, request, *args, **kwargs):
+    # Позволяет отклонить/принять заявку в друзья.
+    def update(self, request, *args, **kwargs):
         pk = kwargs.get('pk', None)
         this = request.user
         if not pk:  # Неправильный запрос
@@ -197,17 +208,18 @@ class InvitesView(viewsets.ModelViewSet):
 
         try:  # Пользователь не существует
             other = User.objects.get(pk=pk)
-        except:
+        except Exception:
             return Response({'error': 'Object does not exist.'})
 
+        # Нет входящего запроса
         if InviteList.objects.filter(
                 sender=other,
                 getter=this).all().count() == 0:
             return Response({'error': f'No incoming invitation from {other}'})
 
-        try:
+        try:  # Узнаём, отклонил или принял запрос пользователь
             action = request.data['action']
-        except:
+        except Exception:
             return Response({'error': 'Query must contain \'action\' field'})
 
         if action not in [self.ACCEPT, self.DENY]:
@@ -223,7 +235,8 @@ class InvitesView(viewsets.ModelViewSet):
         invitation.delete()
         return Response({'info': out_message})
 
-    def get_status(self, request, *args, **kwargs):
+    # Возвращает статус дружбы - друзья, ожидает заявка, ничего.
+    def retrieve(self, request, *args, **kwargs):
         pk = kwargs.get('pk', None)
         sender = request.user
         if not pk:  # Неправильный запрос
@@ -231,17 +244,20 @@ class InvitesView(viewsets.ModelViewSet):
 
         try:  # Пользователь не существует
             getter = User.objects.get(pk=pk)
-        except:
+        except Exception:
             return Response({'error': 'Object does not exist.'})
 
+        # Пользователи друзья
         if FriendsView.are_friends(sender, getter):
             return Response({'friend_status': 'friend'})
 
+        # Ищем исходящий запросы дружбы
         if InviteList.objects.filter(
                 sender=sender,
                 getter=getter).all().count() != 0:
             return Response({'friend_status': 'outcoming invitation'})
 
+        # Ищем входящий запрос дружбы
         if InviteList.objects.filter(
                 sender=getter,
                 getter=sender).all().count() != 0:
